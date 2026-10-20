@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function validItem(d) {
+      return d.keys().hasOnly(['code','name','category','unit','quantity','minStock','createdAt','createdBy','updatedAt'])
+        && d.code is string && d.code.size() > 0 && d.code.size() <= 60
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 120
+        && d.category is string && d.category.size() <= 100
+        && d.unit is string && d.unit.size() > 0 && d.unit.size() <= 30
+        && d.quantity is int && d.quantity >= 0 && d.quantity <= 100000000
+        && d.minStock is int && d.minStock >= 0 && d.minStock <= 100000000;
+    }
+    match /items/{itemId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && validItem(request.resource.data)
+        && request.resource.data.createdBy == request.auth.token.email
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && validItem(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity','updatedAt'])
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    match /transactions/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['itemId','itemCode','itemName','quantity','type','actor','note','performedBy','createdAt'])
+        && request.resource.data.itemId is string
+        && request.resource.data.itemCode is string
+        && request.resource.data.itemName is string
+        && request.resource.data.quantity is int && request.resource.data.quantity > 0 && request.resource.data.quantity <= 100000000
+        && request.resource.data.type in ['in','out']
+        && request.resource.data.actor is string && request.resource.data.actor.size() > 0 && request.resource.data.actor.size() <= 120
+        && request.resource.data.note is string && request.resource.data.note.size() <= 500
+        && request.resource.data.performedBy == request.auth.token.email
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
